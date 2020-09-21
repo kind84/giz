@@ -2,6 +2,41 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 
+const OddSide = enum(u3) {
+    None = 1,
+    Height = 2,
+    Width = 3,
+    Both = 6,
+};
+
+const Sides = struct {
+    oddness: OddSide,
+
+    fn hasHeightOdd(self: *Sides) bool {
+        return @enumToInt(self.oddness) % 2 == 0;
+    }
+
+    fn hasWidthOdd(self: *Sides) bool {
+        return @enumToInt(self.oddness) % 3 == 0;
+    }
+
+    fn hasBothSidesOdd(self: *Sides) bool {
+        return self.oddness == OddSize.Both;
+    }
+
+    fn heightOdd(self: *Sides) void {
+        if (!self.hasHeightOdd()) {
+            self.oddness = @intToEnum(OddSide, @enumToInt(self.oddness) * @enumToInt(OddSide.Height));
+        }
+    }
+
+    fn widthOdd(self: *Sides) void {
+        if (!self.hasWidthOdd()) {
+            self.oddness = @intToEnum(OddSide, @enumToInt(self.oddness) * @enumToInt(OddSide.Width));
+        }
+    }
+};
+
 const Tile = @This();
 
 allocator: *Allocator,
@@ -32,22 +67,27 @@ pub fn downscale(self: Tile) !*Tile {
 }
 
 fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
-    var h_odd = false;
-    var w_odd = false;
+    var sides = Sides{ .oddness = OddSide.None };
 
     var h = height;
     if (h % 2 != 0) {
-        h_odd = true;
+        sides.heightOdd();
         h -= 1;
     }
     var w = width;
     if (w % 2 != 0) {
-        w_odd = true;
+        sides.widthOdd();
         w -= 1;
     }
 
     var size = (chan.len) >> 2;
-    if (h_odd) size += ((width + 1) >> 1);
+
+    switch (sides.oddness) {
+        OddSide.Height => size += (width >> 2),
+        OddSide.Width => size += (height >> 2),
+        OddSide.Both => size += ((width >> 2) + (height >> 2) + 1),
+        OddSide.None => {},
+    }
 
     const allocator = std.heap.page_allocator;
     var buff_down = try allocator.alloc(u8, size);
@@ -68,13 +108,13 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
             idx += 1;
         }
 
-        if (w_odd) {
+        if (sides.hasWidthOdd()) {
             buff_down[idx] = (r1[w] >> 1) + (r2[w] >> 1);
             idx += 1;
         }
     }
 
-    if (h_odd) {
+    if (sides.hasHeightOdd()) {
         const r = chan[i * width .. (i * width) + width];
         var j: u32 = 0;
 
@@ -83,7 +123,7 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
             idx += 1;
         }
 
-        if (w_odd) {
+        if (sides.hasWidthOdd()) {
             buff_down[idx] = chan[chan.len - 1];
             idx += 1;
         }
@@ -109,6 +149,18 @@ test "downsample" {
             .chan = &[_]u8{8} ** 81,
             .exp_len = 25,
             .height = 9,
+            .width = 9,
+        },
+        .{
+            .chan = &[_]u8{8} ** 72,
+            .exp_len = 20,
+            .height = 9,
+            .width = 8,
+        },
+        .{
+            .chan = &[_]u8{8} ** 72,
+            .exp_len = 20,
+            .height = 8,
             .width = 9,
         },
     };
