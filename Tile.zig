@@ -59,11 +59,27 @@ pub fn init(idx: u32, x: u32, y: u32, h: u32, w: u32, chans: [][]u8) *Tile {
 }
 
 pub fn downscale(self: Tile) !*Tile {
-    for (self.channels) |c| {
-        // downsample in parallel
+    const allocator = std.heap.page_allocator;
+    const FrameType = @TypeOf(async downsample([]const u8, u32, u32));
+    var frames = try allocator.alloc(FrameType, self.channels.len);
+    var down: [self.channels.len][]u8 = undefined;
+
+    for (self.channels) |c, i| {
+        frames[i] = async downsample(c, self.h, self.w);
+    }
+    for (frames) |*f, i| {
+        down[i] = try await f;
     }
 
-    var down: [self.channels.len][]u8 = undefined;
+    return &Tile{
+        .allocator = self.allocator,
+        .index = self.index,
+        .x = self.x,
+        .y = self.y,
+        .h = (1 + self.h) >> 1,
+        .w = (1 + self.w) >> 1,
+        .channels = down,
+    };
 }
 
 fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
@@ -80,12 +96,12 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
         w -= 1;
     }
 
-    var size = (chan.len) >> 2;
+    var size = (3 + chan.len) >> 2;
 
     switch (sides.oddness) {
-        OddSide.Height => size += (width >> 2),
-        OddSide.Width => size += (height >> 2),
-        OddSide.Both => size += ((width >> 2) + (height >> 2) + 1),
+        OddSide.Height => size += ((1 + width) >> 2),
+        OddSide.Width => size += ((1 + height) >> 2),
+        OddSide.Both => size += ((1 + width) >> 2) + ((1 + height) >> 2),
         OddSide.None => {},
     }
 
@@ -158,10 +174,16 @@ test "downsample" {
             .width = 8,
         },
         .{
-            .chan = &[_]u8{8} ** 72,
+            .chan = &[_]u8{8} ** 63,
             .exp_len = 20,
-            .height = 8,
+            .height = 7,
             .width = 9,
+        },
+        .{
+            .chan = &[_]u8{8} ** 54,
+            .exp_len = 15,
+            .height = 9,
+            .width = 6,
         },
     };
 
