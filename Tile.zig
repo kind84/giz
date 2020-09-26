@@ -78,8 +78,8 @@ pub fn downscale(self: Tile) !*Tile {
         .index = self.index,
         .x = self.x,
         .y = self.y,
-        .h = (1 + self.h) >> 1,
-        .w = (1 + self.w) >> 1,
+        .h = 1 + (self.h - 1) >> 1,
+        .w = 1 + (self.w - 1) >> 1,
         .channels = down,
     };
 }

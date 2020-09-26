@@ -16,17 +16,115 @@ pub const PyramidArgs = struct {
     tileSize: u32,
 };
 
-pub fn newPyramid(args: PyramidArgs) !*Pyramid {}
+pub fn init(args: *PyramidArgs) !*Pyramid {
+    if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) {
+        return error.InvalidArgument;
+    }
 
+    const num_levels = pyramidLevels(args);
+
+    var tot_tiles = 0;
+    var l = 0;
+
+    while (l < num_levels) : (l += 1) {
+        const h = 1 + (args.SlideHeight - 1) >> l;
+        const w = 1 + (args.SlideWidth - 1) >> l;
+
+        // number of tiles per dimension
+        const tiles_w = 1 + (w - 1) / args.TileSize;
+        const tiles_h = 1 + (h - 1) / args.TileSize;
+
+        var level = &Level{
+            .height = h,
+            .width = w,
+            // .TilesOnWidth = tilesW,
+            // .TilesOnHeight = tilesH,
+            // .TilesCount = tilesH * tilesW,
+            .tiles = undefined,
+        };
+        tot_tiles += level.TilesCount;
+        // TODO: initialize level Tiles slice
+
+        var i = 0;
+        var j = 0;
+        while (i < tiles_h) : (i += 1) {
+            while (j < tiles_w) : (j += 1) {
+                const index = j + (tiles_w * i);
+
+                // compute tile dimensions
+                const tw = tileSide(args.tileSize, w, tiles_w);
+                const th = tileSide(args.tileSize, h, tiles_h);
+
+                // const args := &NewTileArgs{
+                // 	Index:  index,
+                // 	X:      j * args.TileSize,
+                // 	Y:      i * args.TileSize,
+                // 	Height: th,
+                // 	Width:  tw,
+                // }
+                // t := NewTile(args)
+
+                // level.Tiles = append(level.Tiles, t)
+            }
+        }
+    }
+}
+
+/// Computes the number of levels in the pyramid based on the provided starting
+/// dimensions.
 pub fn pyramidLevels(args: *PyramidArgs) u64 {
     // avoid divison by zero and minus sign
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) return 0;
 
     // number of levels n: 2^(n-1) < max(width, height) / 512 <= 2^n
-    const nextPow2 = nextPowerOfTwo(1 + (math.max(args.slideWidth, args.slideHeight) - 1) / args.tileSize);
-    if (nextPow2 == 0) return 0;
+    const next_pow_2 = nextPowerOfTwo(1 + (math.max(args.slideWidth, args.slideHeight) - 1) / args.tileSize);
+    if (next_pow_2 == 0) return 0;
 
-    return math.log2(nextPow2);
+    return math.log2(next_pow_2);
+}
+
+fn tileSide(tileSize: u32, sideSize: u32, tilesOnSide: u32, index: u32) u32 {
+    if (index + 1 == tilesOnSide) {
+        return sideSize - (tileSize * (tilesOnSide - 1));
+    } else return tileSize;
+}
+
+test "tileSide" {
+    const tests = [_]struct {
+        tileSize: u32,
+        sideSize: u32,
+        tilesOnSide: u32,
+        index: u32,
+        expected: u32,
+    }{
+        .{
+            .tileSize = 512,
+            .sideSize = 1920,
+            .tilesOnSide = 4,
+            .index = 3,
+            .expected = 384,
+        },
+        .{
+            .tileSize = 512,
+            .sideSize = 1920,
+            .tilesOnSide = 4,
+            .index = 2,
+            .expected = 512,
+        },
+        .{
+            .tileSize = 512,
+            .sideSize = 1080,
+            .tilesOnSide = 3,
+            .index = 2,
+            .expected = 56,
+        },
+    };
+
+    for (tests) |t| {
+        const s = tileSide(t.tileSize, t.sideSize, t.tilesOnSide, t.index);
+
+        std.debug.assert(s == t.expected);
+    }
 }
 
 /// Returns `v` if it is a power-of-two, or else the next-highest power-of-two.
