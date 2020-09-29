@@ -49,17 +49,6 @@ h: u32,
 w: u32,
 channels: [][]const u8,
 
-pub fn init(idx: u32, x: u32, y: u32, h: u32, w: u32, chans: [][]u8) *Tile {
-    return &Tile{
-        .index = idx,
-        .x = x,
-        .y = y,
-        .h = h,
-        .w = w,
-        .channels = chans,
-    };
-}
-
 pub fn downscale(self: Tile) !*Tile {
     const FrameType = @TypeOf(async downsample(self.channels[0], self.h, self.w));
     var frames = try self.allocator.alloc(FrameType, self.channels.len);
@@ -82,6 +71,28 @@ pub fn downscale(self: Tile) !*Tile {
         .w = 1 + (self.w - 1) >> 1,
         .channels = down,
     };
+}
+
+test "downscale" {
+    const chan = [_]u8{8} ** 64;
+    var channels = [_][]const u8{chan[0..]} ** 3;
+
+    var t = Tile{
+        .allocator = std.heap.page_allocator,
+        .index = 1,
+        .x = 0,
+        .y = 0,
+        .h = 8,
+        .w = 8,
+        .channels = &channels,
+    };
+
+    var dt = try t.downscale();
+    defer t.allocator.free(dt.channels);
+
+    std.testing.expect(dt.channels.len == 3);
+    std.testing.expect(dt.channels[0].len == 16);
+    std.testing.expect(dt.channels[0][0] == 8);
 }
 
 fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
@@ -150,28 +161,6 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
     return buff_down;
 }
 
-test "downscale" {
-    const chan = [_]u8{8} ** 64;
-    var channels = [_][]const u8{chan[0..]} ** 3;
-
-    var t = Tile{
-        .allocator = std.heap.page_allocator,
-        .index = 1,
-        .x = 0,
-        .y = 0,
-        .h = 8,
-        .w = 8,
-        .channels = &channels,
-    };
-
-    var dt = try t.downscale();
-    defer t.allocator.free(dt.channels);
-
-    std.debug.assert(dt.channels.len == 3);
-    std.debug.assert(dt.channels[0].len == 16);
-    std.debug.assert(dt.channels[0][0] == 8);
-}
-
 test "downsample" {
     const tests = [_]struct {
         chan: []const u8,
@@ -231,7 +220,7 @@ test "downsample" {
 
         std.debug.assert(d.len == t.exp_len);
         for (d) |byte| {
-            std.debug.assert(byte == t.chan[0]);
+            std.testing.expect(byte == t.chan[0]);
         }
     }
 }

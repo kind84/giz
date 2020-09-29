@@ -4,67 +4,213 @@ const math = std.math;
 const Allocator = mem.Allocator;
 
 const Level = @import("Level.zig");
+const Tile = @import("Tile.zig");
 
 const Pyramid = @This();
 
 allocator: *Allocator,
-levels: []*Level,
+levels: []Level,
+chansNo: u8,
 
 pub const PyramidArgs = struct {
-    slideWidth: u32,
+    allocator: *Allocator,
     slideHeight: u32,
+    slideWidth: u32,
     tileSize: u32,
+    chansNo: u8,
 };
 
-pub fn init(args: *PyramidArgs) !*Pyramid {
+pub fn init(args: *PyramidArgs) !Pyramid {
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) {
         return error.InvalidArgument;
     }
 
     const num_levels = pyramidLevels(args);
 
-    var tot_tiles = 0;
-    var l = 0;
+    var levels = try args.allocator.alloc(Level, num_levels + 1);
 
-    while (l < num_levels) : (l += 1) {
-        const h = 1 + (args.SlideHeight - 1) >> l;
-        const w = 1 + (args.SlideWidth - 1) >> l;
+    var tot_tiles: u32 = 0;
+    var l: u5 = 0;
+
+    while (l <= num_levels) : (l += 1) {
+        const h = 1 + ((args.slideHeight - 1) >> l);
+        const w = 1 + ((args.slideWidth - 1) >> l);
 
         // number of tiles per dimension
-        const tiles_w = 1 + (w - 1) / args.TileSize;
-        const tiles_h = 1 + (h - 1) / args.TileSize;
+        const tiles_w = 1 + ((w - 1) / args.tileSize);
+        const tiles_h = 1 + ((h - 1) / args.tileSize);
 
-        var level = &Level{
+        var level = Level{
             .height = h,
             .width = w,
-            // .TilesOnWidth = tilesW,
-            // .TilesOnHeight = tilesH,
-            // .TilesCount = tilesH * tilesW,
+            .tilesOnWidth = tiles_w,
+            .tilesOnHeight = tiles_h,
+            .tilesCount = tiles_h * tiles_w,
             .tiles = undefined,
         };
-        tot_tiles += level.TilesCount;
-        // TODO: initialize level Tiles slice
+        tot_tiles += level.tilesCount;
 
-        var i = 0;
-        var j = 0;
+        var tiles = try args.allocator.alloc(Tile, level.tilesCount);
+
+        var i: u32 = 0;
         while (i < tiles_h) : (i += 1) {
+            var j: u32 = 0;
             while (j < tiles_w) : (j += 1) {
-                const index = j + (tiles_w * i);
+                var index = j + (tiles_w * i);
 
                 // compute tile dimensions
-                const tw = tileSide(args.tileSize, w, tiles_w);
-                const th = tileSide(args.tileSize, h, tiles_h);
+                var tw = tileSide(args.tileSize, w, tiles_w, j);
+                var th = tileSide(args.tileSize, h, tiles_h, i);
 
-                // const args := &NewTileArgs{
-                // 	Index:  index,
-                // 	X:      j * args.TileSize,
-                // 	Y:      i * args.TileSize,
-                // 	Height: th,
-                // 	Width:  tw,
-                // }
-                // t := NewTile(args)
+                var tile = Tile{
+                    .allocator = args.allocator,
+                    .index = index,
+                    .x = j * args.tileSize,
+                    .y = i * args.tileSize,
+                    .h = th,
+                    .w = tw,
+                    .channels = undefined,
+                };
 
-                // level.Tiles = append(level.Tiles, t)
+                tiles[index] = tile;
+            }
+        }
+
+        level.tiles = tiles;
+        levels[l] = level;
+    }
+
+    return Pyramid{
+        .allocator = args.allocator,
+        .levels = levels,
+        .chansNo = args.chansNo,
+    };
+}
+
+test "init" {
+    var tile1 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile2 = Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile3 = Tile{ .allocator = undefined, .index = 2, .x = 512 * 2, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile4 = Tile{ .allocator = undefined, .index = 3, .x = 512 * 3, .y = 0, .h = 512, .w = 384, .channels = undefined };
+    var tile5 = Tile{ .allocator = undefined, .index = 4, .x = 0, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile6 = Tile{ .allocator = undefined, .index = 5, .x = 512, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile7 = Tile{ .allocator = undefined, .index = 6, .x = 512 * 2, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile8 = Tile{ .allocator = undefined, .index = 7, .x = 512 * 3, .y = 512, .h = 512, .w = 384, .channels = undefined };
+    var tile9 = Tile{ .allocator = undefined, .index = 8, .x = 0, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile10 = Tile{ .allocator = undefined, .index = 9, .x = 512, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile11 = Tile{ .allocator = undefined, .index = 10, .x = 512 * 2, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile12 = Tile{ .allocator = undefined, .index = 11, .x = 512 * 3, .y = 1024, .h = 56, .w = 384, .channels = undefined };
+
+    var tiles1 = &[_]Tile{
+        tile1,
+        tile2,
+        tile3,
+        tile4,
+        tile5,
+        tile6,
+        tile7,
+        tile8,
+        tile9,
+        tile10,
+        tile11,
+        tile12,
+    };
+
+    var tile13 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile14 = Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 448, .channels = undefined };
+    var tile15 = Tile{ .allocator = undefined, .index = 2, .x = 0, .y = 512, .h = 28, .w = 512, .channels = undefined };
+    var tile16 = Tile{ .allocator = undefined, .index = 3, .x = 512, .y = 512, .h = 28, .w = 448, .channels = undefined };
+
+    var tiles2 = &[_]Tile{
+        tile13,
+        tile14,
+        tile15,
+        tile16,
+    };
+
+    var tile17 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 270, .w = 480, .channels = undefined };
+
+    var tiles3 = &[_]Tile{tile17};
+
+    var levels = &[_]Level{
+        Level{
+            .height = 1080,
+            .width = 1920,
+            .tilesOnWidth = 4,
+            .tilesOnHeight = 3,
+            .tilesCount = 12,
+            .tiles = tiles1,
+        },
+        Level{
+            .height = 540,
+            .width = 960,
+            .tilesOnWidth = 2,
+            .tilesOnHeight = 2,
+            .tilesCount = 4,
+            .tiles = tiles2,
+        },
+        Level{
+            .height = 270,
+            .width = 480,
+            .tilesOnWidth = 1,
+            .tilesOnHeight = 1,
+            .tilesCount = 1,
+            .tiles = tiles3,
+        },
+    };
+
+    const tests = [_]struct {
+        tileSize: u32,
+        h: u32,
+        w: u32,
+        expected: Pyramid,
+        expectsErr: bool,
+    }{
+        .{
+            .tileSize = 512,
+            .h = 1080,
+            .w = 1920,
+            .expected = Pyramid{
+                .allocator = undefined,
+                .levels = levels,
+                .chansNo = 3,
+            },
+            .expectsErr = false,
+        },
+    };
+
+    for (tests) |t| {
+        var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+        const allocator = &gpa.allocator;
+        const a = &std.heap.ArenaAllocator.init(allocator).allocator;
+        var args = PyramidArgs{
+            .allocator = a,
+            .slideHeight = t.h,
+            .slideWidth = t.w,
+            .tileSize = t.tileSize,
+            .chansNo = 3,
+        };
+
+        const p = try init(&args);
+
+        defer a.destroy(&p);
+
+        std.testing.expectEqual(t.expected.levels.len, p.levels.len);
+        std.testing.expectEqual(@as(u8, 3), p.chansNo);
+
+        for (p.levels) |*level, i| {
+            std.testing.expectEqual(t.expected.levels[i].tiles.len, level.tiles.len);
+            std.testing.expectEqual(t.expected.levels[i].tilesCount, level.tilesCount);
+            std.testing.expectEqual(t.expected.levels[i].height, level.height);
+            std.testing.expectEqual(t.expected.levels[i].width, level.width);
+            std.testing.expectEqual(t.expected.levels[i].tilesOnWidth, level.tilesOnWidth);
+            std.testing.expectEqual(t.expected.levels[i].tilesOnHeight, level.tilesOnHeight);
+
+            for (level.tiles) |tile, j| {
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].x, tile.x);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].y, tile.y);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].h, tile.h);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].w, tile.w);
             }
         }
     }
@@ -72,7 +218,7 @@ pub fn init(args: *PyramidArgs) !*Pyramid {
 
 /// Computes the number of levels in the pyramid based on the provided starting
 /// dimensions.
-pub fn pyramidLevels(args: *PyramidArgs) u64 {
+pub fn pyramidLevels(args: *const PyramidArgs) u64 {
     // avoid divison by zero and minus sign
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) return 0;
 
@@ -81,65 +227,6 @@ pub fn pyramidLevels(args: *PyramidArgs) u64 {
     if (next_pow_2 == 0) return 0;
 
     return math.log2(next_pow_2);
-}
-
-fn tileSide(tileSize: u32, sideSize: u32, tilesOnSide: u32, index: u32) u32 {
-    if (index + 1 == tilesOnSide) {
-        return sideSize - (tileSize * (tilesOnSide - 1));
-    } else return tileSize;
-}
-
-test "tileSide" {
-    const tests = [_]struct {
-        tileSize: u32,
-        sideSize: u32,
-        tilesOnSide: u32,
-        index: u32,
-        expected: u32,
-    }{
-        .{
-            .tileSize = 512,
-            .sideSize = 1920,
-            .tilesOnSide = 4,
-            .index = 3,
-            .expected = 384,
-        },
-        .{
-            .tileSize = 512,
-            .sideSize = 1920,
-            .tilesOnSide = 4,
-            .index = 2,
-            .expected = 512,
-        },
-        .{
-            .tileSize = 512,
-            .sideSize = 1080,
-            .tilesOnSide = 3,
-            .index = 2,
-            .expected = 56,
-        },
-    };
-
-    for (tests) |t| {
-        const s = tileSide(t.tileSize, t.sideSize, t.tilesOnSide, t.index);
-
-        std.debug.assert(s == t.expected);
-    }
-}
-
-/// Returns `v` if it is a power-of-two, or else the next-highest power-of-two.
-fn nextPowerOfTwo(val: u64) u64 {
-    if (val == math.maxInt(u64) or val == 0) return 0;
-    var v = val;
-    v -= 1;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    v += 1;
-    return v;
 }
 
 test "pyramidLevels" {
@@ -231,13 +318,74 @@ test "pyramidLevels" {
 
     for (tests) |t| {
         const levels = pyramidLevels(&PyramidArgs{
+            .allocator = undefined,
             .slideHeight = t.h,
             .slideWidth = t.w,
             .tileSize = t.tileSize,
+            .chansNo = 3,
         });
 
-        std.debug.assert(levels == t.expected);
+        std.testing.expect(levels == t.expected);
     }
+}
+
+fn tileSide(tileSize: u32, sideSize: u32, tilesOnSide: u32, index: u32) u32 {
+    if (index + 1 == tilesOnSide) {
+        return sideSize - (tileSize * (tilesOnSide - 1));
+    } else return tileSize;
+}
+
+test "tileSide" {
+    const tests = [_]struct {
+        tileSize: u32,
+        sideSize: u32,
+        tilesOnSide: u32,
+        index: u32,
+        expected: u32,
+    }{
+        .{
+            .tileSize = 512,
+            .sideSize = 1920,
+            .tilesOnSide = 4,
+            .index = 3,
+            .expected = 384,
+        },
+        .{
+            .tileSize = 512,
+            .sideSize = 1920,
+            .tilesOnSide = 4,
+            .index = 2,
+            .expected = 512,
+        },
+        .{
+            .tileSize = 512,
+            .sideSize = 1080,
+            .tilesOnSide = 3,
+            .index = 2,
+            .expected = 56,
+        },
+    };
+
+    for (tests) |t| {
+        const s = tileSide(t.tileSize, t.sideSize, t.tilesOnSide, t.index);
+
+        std.testing.expect(s == t.expected);
+    }
+}
+
+/// Returns `v` if it is a power-of-two, or else the next-highest power-of-two.
+fn nextPowerOfTwo(val: u64) u64 {
+    if (val == math.maxInt(u64) or val == 0) return 0;
+    var v = val;
+    v -= 1;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v += 1;
+    return v;
 }
 
 test "nextPowerOfTwo" {
@@ -277,6 +425,6 @@ test "nextPowerOfTwo" {
 
     for (tests) |t| {
         const p2 = nextPowerOfTwo(t.val);
-        std.debug.assert(p2 == t.expect);
+        std.testing.expect(p2 == t.expect);
     }
 }
