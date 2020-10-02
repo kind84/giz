@@ -39,62 +39,158 @@ const Sides = struct {
     }
 };
 
-const Tile = @This();
+pub const Tile = struct {
+    allocator: *Allocator,
+    index: u32,
+    x: u32,
+    y: u32,
+    h: u32,
+    w: u32,
+    channels: [][]const u8,
 
-allocator: *Allocator,
-index: u32,
-x: u32,
-y: u32,
-h: u32,
-w: u32,
-channels: [][]const u8,
+    pub fn downscale(self: Tile) !*Tile {
+        const FrameType = @TypeOf(async downsample(self.channels[0], self.h, self.w));
+        var frames = try self.allocator.alloc(FrameType, self.channels.len);
+        defer self.allocator.free(frames);
+        var down = try self.allocator.alloc([]u8, self.channels.len);
 
-pub fn downscale(self: Tile) !*Tile {
-    const FrameType = @TypeOf(async downsample(self.channels[0], self.h, self.w));
-    var frames = try self.allocator.alloc(FrameType, self.channels.len);
-    defer self.allocator.free(frames);
-    var down = try self.allocator.alloc([]u8, self.channels.len);
+        for (self.channels) |c, i| {
+            frames[i] = async downsample(c, self.h, self.w);
+        }
+        for (frames) |*f, i| {
+            down[i] = try await f;
+        }
 
-    for (self.channels) |c, i| {
-        frames[i] = async downsample(c, self.h, self.w);
+        return &Tile{
+            .allocator = self.allocator,
+            .index = self.index,
+            .x = self.x,
+            .y = self.y,
+            .h = 1 + (self.h - 1) >> 1,
+            .w = 1 + (self.w - 1) >> 1,
+            .channels = down,
+        };
     }
-    for (frames) |*f, i| {
-        down[i] = try await f;
+
+    test "downscale" {
+        const chan = [_]u8{8} ** 64;
+        var channels = [_][]const u8{chan[0..]} ** 3;
+
+        var t = Tile{
+            .allocator = std.heap.page_allocator,
+            .index = 1,
+            .x = 0,
+            .y = 0,
+            .h = 8,
+            .w = 8,
+            .channels = &channels,
+        };
+
+        var dt = try t.downscale();
+        defer t.allocator.free(dt.channels);
+
+        std.testing.expect(dt.channels.len == 3);
+        std.testing.expect(dt.channels[0].len == 16);
+        std.testing.expect(dt.channels[0][0] == 8);
+    }
+};
+
+/// merges two horizontaly adiacent tiles and returns the result.
+pub fn mergeTiles(t: *Tile, next: *Tile) ![][]u8 {
+    const merged_size = (t.h * t.w) + (next.h * next.w);
+    var out = try t.allocator.alloc([]u8, t.channels.len);
+    for (out) |*c_out| {
+        c_out.* = try t.allocator.alloc(u8, merged_size);
     }
 
-    return &Tile{
-        .allocator = self.allocator,
-        .index = self.index,
-        .x = self.x,
-        .y = self.y,
-        .h = 1 + (self.h - 1) >> 1,
-        .w = 1 + (self.w - 1) >> 1,
-        .channels = down,
-    };
+    const m_w = t.w + next.w;
+    var n: u8 = 0;
+    while (n < t.channels.len) : (n += 1) {
+        var r: u32 = 0;
+        while (r < t.h) : (r += 1) {
+            mem.copy(u8, out[n][r * m_w .. r * m_w + t.w], t.channels[n][r * t.w .. r * t.w + t.w]);
+            mem.copy(u8, out[n][r * m_w + t.w .. r * m_w + t.w + next.w], next.channels[n][r * t.w .. r * t.w + t.w]);
+        }
+    }
+
+    return out;
 }
 
-test "downscale" {
-    const chan = [_]u8{8} ** 64;
-    var channels = [_][]const u8{chan[0..]} ** 3;
+test "mergeTiles" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = &gpa.allocator;
+    const arena = &std.heap.ArenaAllocator.init(allocator);
+    const a = &arena.allocator;
+    defer arena.deinit();
 
-    var t = Tile{
-        .allocator = std.heap.page_allocator,
-        .index = 1,
-        .x = 0,
-        .y = 0,
-        .h = 8,
-        .w = 8,
-        .channels = &channels,
+    var odd = [_]u8{ 1, 3 };
+    var even = [_]u8{ 2, 4 };
+    var all = [_]u8{ 1, 2, 3, 4 };
+    var sqr1 = [_]u8{ 0, 0, 2, 2 };
+    var sqr2 = [_]u8{ 1, 1, 3, 3 };
+    var rect = [_]u8{ 0, 0, 1, 1, 2, 2, 3, 3 };
+
+    var tests = [_]struct {
+        tileLeft: Tile,
+        tileRight: Tile,
+        merge: [][]u8,
+    }{
+        .{
+            .tileLeft = Tile{
+                .allocator = a,
+                .index = 0,
+                .x = 0,
+                .y = 0,
+                .h = 2,
+                .w = 1,
+                .channels = &[_][]u8{&odd},
+            },
+            .tileRight = Tile{
+                .allocator = a,
+                .index = 0,
+                .x = 2,
+                .y = 0,
+                .h = 2,
+                .w = 1,
+                .channels = &[_][]u8{&even},
+            },
+            .merge = &[_][]u8{&all},
+        },
+        .{
+            .tileLeft = Tile{
+                .allocator = a,
+                .index = 0,
+                .x = 0,
+                .y = 0,
+                .h = 2,
+                .w = 2,
+                .channels = &[_][]u8{&sqr1},
+            },
+            .tileRight = Tile{
+                .allocator = a,
+                .index = 0,
+                .x = 2,
+                .y = 0,
+                .h = 2,
+                .w = 2,
+                .channels = &[_][]u8{&sqr2},
+            },
+            .merge = &[_][]u8{&rect},
+        },
     };
 
-    var dt = try t.downscale();
-    defer t.allocator.free(dt.channels);
+    for (tests) |*t| {
+        const m = try mergeTiles(&t.tileLeft, &t.tileRight);
 
-    std.testing.expect(dt.channels.len == 3);
-    std.testing.expect(dt.channels[0].len == 16);
-    std.testing.expect(dt.channels[0][0] == 8);
+        std.testing.expectEqual(t.merge.len, m.len);
+        for (m) |m_chan, i| {
+            std.testing.expectEqualSlices(u8, t.merge[i], m_chan);
+        }
+    }
 }
 
+/// downsamples a channel by taking the average of 2x2
+/// pixel squares.
 fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
     var sides = Sides{ .oddness = OddSide.None };
 

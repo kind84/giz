@@ -3,8 +3,16 @@ const mem = std.mem;
 const math = std.math;
 const Allocator = mem.Allocator;
 
-const Level = @import("Level.zig");
-const Tile = @import("Tile.zig");
+const tile = @import("Tile.zig");
+
+const Level = struct {
+    height: u32,
+    width: u32,
+    tilesOnWidth: u32,
+    tilesOnHeight: u32,
+    tilesCount: u32,
+    tiles: []tile.Tile,
+};
 
 const Pyramid = @This();
 
@@ -50,7 +58,7 @@ pub fn init(args: *PyramidArgs) !Pyramid {
         };
         tot_tiles += level.tilesCount;
 
-        var tiles = try args.allocator.alloc(Tile, level.tilesCount);
+        var tiles = try args.allocator.alloc(tile.Tile, level.tilesCount);
 
         var i: u32 = 0;
         while (i < tiles_h) : (i += 1) {
@@ -62,7 +70,7 @@ pub fn init(args: *PyramidArgs) !Pyramid {
                 var tw = tileSide(args.tileSize, w, tiles_w, j);
                 var th = tileSide(args.tileSize, h, tiles_h, i);
 
-                var tile = Tile{
+                var t = tile.Tile{
                     .allocator = args.allocator,
                     .index = index,
                     .x = j * args.tileSize,
@@ -72,7 +80,7 @@ pub fn init(args: *PyramidArgs) !Pyramid {
                     .channels = undefined,
                 };
 
-                tiles[index] = tile;
+                tiles[index] = t;
             }
         }
 
@@ -88,20 +96,20 @@ pub fn init(args: *PyramidArgs) !Pyramid {
 }
 
 test "init" {
-    var tile1 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
-    var tile2 = Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 512, .channels = undefined };
-    var tile3 = Tile{ .allocator = undefined, .index = 2, .x = 512 * 2, .y = 0, .h = 512, .w = 512, .channels = undefined };
-    var tile4 = Tile{ .allocator = undefined, .index = 3, .x = 512 * 3, .y = 0, .h = 512, .w = 384, .channels = undefined };
-    var tile5 = Tile{ .allocator = undefined, .index = 4, .x = 0, .y = 512, .h = 512, .w = 512, .channels = undefined };
-    var tile6 = Tile{ .allocator = undefined, .index = 5, .x = 512, .y = 512, .h = 512, .w = 512, .channels = undefined };
-    var tile7 = Tile{ .allocator = undefined, .index = 6, .x = 512 * 2, .y = 512, .h = 512, .w = 512, .channels = undefined };
-    var tile8 = Tile{ .allocator = undefined, .index = 7, .x = 512 * 3, .y = 512, .h = 512, .w = 384, .channels = undefined };
-    var tile9 = Tile{ .allocator = undefined, .index = 8, .x = 0, .y = 1024, .h = 56, .w = 512, .channels = undefined };
-    var tile10 = Tile{ .allocator = undefined, .index = 9, .x = 512, .y = 1024, .h = 56, .w = 512, .channels = undefined };
-    var tile11 = Tile{ .allocator = undefined, .index = 10, .x = 512 * 2, .y = 1024, .h = 56, .w = 512, .channels = undefined };
-    var tile12 = Tile{ .allocator = undefined, .index = 11, .x = 512 * 3, .y = 1024, .h = 56, .w = 384, .channels = undefined };
+    var tile1 = tile.Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile2 = tile.Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile3 = tile.Tile{ .allocator = undefined, .index = 2, .x = 512 * 2, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile4 = tile.Tile{ .allocator = undefined, .index = 3, .x = 512 * 3, .y = 0, .h = 512, .w = 384, .channels = undefined };
+    var tile5 = tile.Tile{ .allocator = undefined, .index = 4, .x = 0, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile6 = tile.Tile{ .allocator = undefined, .index = 5, .x = 512, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile7 = tile.Tile{ .allocator = undefined, .index = 6, .x = 512 * 2, .y = 512, .h = 512, .w = 512, .channels = undefined };
+    var tile8 = tile.Tile{ .allocator = undefined, .index = 7, .x = 512 * 3, .y = 512, .h = 512, .w = 384, .channels = undefined };
+    var tile9 = tile.Tile{ .allocator = undefined, .index = 8, .x = 0, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile10 = tile.Tile{ .allocator = undefined, .index = 9, .x = 512, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile11 = tile.Tile{ .allocator = undefined, .index = 10, .x = 512 * 2, .y = 1024, .h = 56, .w = 512, .channels = undefined };
+    var tile12 = tile.Tile{ .allocator = undefined, .index = 11, .x = 512 * 3, .y = 1024, .h = 56, .w = 384, .channels = undefined };
 
-    var tiles1 = &[_]Tile{
+    var tiles1 = &[_]tile.Tile{
         tile1,
         tile2,
         tile3,
@@ -116,21 +124,21 @@ test "init" {
         tile12,
     };
 
-    var tile13 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
-    var tile14 = Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 448, .channels = undefined };
-    var tile15 = Tile{ .allocator = undefined, .index = 2, .x = 0, .y = 512, .h = 28, .w = 512, .channels = undefined };
-    var tile16 = Tile{ .allocator = undefined, .index = 3, .x = 512, .y = 512, .h = 28, .w = 448, .channels = undefined };
+    var tile13 = tile.Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 512, .w = 512, .channels = undefined };
+    var tile14 = tile.Tile{ .allocator = undefined, .index = 1, .x = 512, .y = 0, .h = 512, .w = 448, .channels = undefined };
+    var tile15 = tile.Tile{ .allocator = undefined, .index = 2, .x = 0, .y = 512, .h = 28, .w = 512, .channels = undefined };
+    var tile16 = tile.Tile{ .allocator = undefined, .index = 3, .x = 512, .y = 512, .h = 28, .w = 448, .channels = undefined };
 
-    var tiles2 = &[_]Tile{
+    var tiles2 = &[_]tile.Tile{
         tile13,
         tile14,
         tile15,
         tile16,
     };
 
-    var tile17 = Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 270, .w = 480, .channels = undefined };
+    var tile17 = tile.Tile{ .allocator = undefined, .index = 0, .x = 0, .y = 0, .h = 270, .w = 480, .channels = undefined };
 
-    var tiles3 = &[_]Tile{tile17};
+    var tiles3 = &[_]tile.Tile{tile17};
 
     var levels = &[_]Level{
         Level{
@@ -182,7 +190,10 @@ test "init" {
     for (tests) |t| {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
         const allocator = &gpa.allocator;
-        const a = &std.heap.ArenaAllocator.init(allocator).allocator;
+        const arena = &std.heap.ArenaAllocator.init(allocator);
+        const a = &arena.allocator;
+        defer arena.deinit();
+
         var args = PyramidArgs{
             .allocator = a,
             .slideHeight = t.h,
@@ -206,11 +217,11 @@ test "init" {
             std.testing.expectEqual(t.expected.levels[i].tilesOnWidth, level.tilesOnWidth);
             std.testing.expectEqual(t.expected.levels[i].tilesOnHeight, level.tilesOnHeight);
 
-            for (level.tiles) |tile, j| {
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].x, tile.x);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].y, tile.y);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].h, tile.h);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].w, tile.w);
+            for (level.tiles) |l_tile, j| {
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].x, l_tile.x);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].y, l_tile.y);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].h, l_tile.h);
+                std.testing.expectEqual(t.expected.levels[i].tiles[j].w, l_tile.w);
             }
         }
     }
