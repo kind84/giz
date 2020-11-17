@@ -229,12 +229,12 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
         var j: u32 = 0;
 
         while (j < w) : (j += 2) {
-            buff_down[idx] = (r1[j] >> 2) + (r1[j + 1] >> 2) + (r2[j] >> 2) + (r2[j + 1] >> 2);
+            buff_down[idx] = (r1[j] + r1[j + 1] + r2[j] + r2[j + 1]) >> 2;
             idx += 1;
         }
 
         if (sides.hasWidthOdd()) {
-            buff_down[idx] = (r1[w] >> 1) + (r2[w] >> 1);
+            buff_down[idx] = (r1[w] + r2[w]) >> 1;
             idx += 1;
         }
     }
@@ -244,7 +244,7 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
         var j: u32 = 0;
 
         while (j < w) : (j += 2) {
-            buff_down[idx] = (r[j] >> 1) + (r[j + 1] >> 1);
+            buff_down[idx] = (r[j] + r[j + 1]) >> 1;
             idx += 1;
         }
 

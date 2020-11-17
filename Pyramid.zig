@@ -3,7 +3,7 @@ const mem = std.mem;
 const math = std.math;
 const Allocator = mem.Allocator;
 
-const tile = @import("Tile.zig");
+const tile = @import("tile.zig");
 
 const Level = struct {
     height: u32,
