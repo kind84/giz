@@ -229,12 +229,15 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
         var j: u32 = 0;
 
         while (j < w) : (j += 2) {
-            buff_down[idx] = (r1[j] + r1[j + 1] + r2[j] + r2[j + 1]) >> 2;
+            buff_down[idx] = @intCast(u8, (@intCast(u10, r1[j]) +
+                @intCast(u10, r1[j + 1]) +
+                @intCast(u10, r2[j]) +
+                @intCast(u10, r2[j + 1])) >> 2);
             idx += 1;
         }
 
         if (sides.hasWidthOdd()) {
-            buff_down[idx] = (r1[w] + r2[w]) >> 1;
+            buff_down[idx] = @intCast(u8, (@intCast(u9, r1[w]) + @intCast(u9, r2[w])) >> 1);
             idx += 1;
         }
     }
@@ -244,7 +247,7 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
         var j: u32 = 0;
 
         while (j < w) : (j += 2) {
-            buff_down[idx] = (r[j] + r[j + 1]) >> 1;
+            buff_down[idx] = @intCast(u8, (@intCast(u9, r[j]) + @intCast(u9, r[j + 1])) >> 1);
             idx += 1;
         }
 
@@ -265,46 +268,58 @@ test "downsample" {
         width: u32,
     }{
         .{
-            .chan = &[_]u8{8} ** 64,
+            .chan = &[_]u8{255} ** 64,
             .exp_len = 16,
             .height = 8,
             .width = 8,
         },
         .{
-            .chan = &[_]u8{8} ** 81,
+            .chan = &[_]u8{255} ** 81,
             .exp_len = 25,
             .height = 9,
             .width = 9,
         },
         .{
-            .chan = &[_]u8{8} ** 72,
+            .chan = &[_]u8{255} ** 72,
             .exp_len = 20,
             .height = 9,
             .width = 8,
         },
         .{
-            .chan = &[_]u8{8} ** 63,
+            .chan = &[_]u8{255} ** 63,
             .exp_len = 20,
             .height = 7,
             .width = 9,
         },
         .{
-            .chan = &[_]u8{8} ** 54,
+            .chan = &[_]u8{255} ** 54,
             .exp_len = 15,
-            .height = 9,
-            .width = 6,
+            .height = 6,
+            .width = 9,
         },
         .{
-            .chan = &[_]u8{8} ** 6,
+            .chan = &[_]u8{255} ** 6,
             .exp_len = 2,
             .height = 2,
             .width = 3,
         },
         .{
-            .chan = &[_]u8{8} ** 2,
+            .chan = &[_]u8{255} ** 6,
+            .exp_len = 2,
+            .height = 3,
+            .width = 2,
+        },
+        .{
+            .chan = &[_]u8{255} ** 2,
             .exp_len = 1,
             .height = 2,
             .width = 1,
+        },
+        .{
+            .chan = &[_]u8{255} ** 2,
+            .exp_len = 1,
+            .height = 1,
+            .width = 2,
         },
     };
 
