@@ -49,13 +49,13 @@ pub const Tile = struct {
     channels: [][]const u8,
 
     pub fn downscale(self: Tile) !*Tile {
-        const FrameType = @TypeOf(async downsample(self.channels[0], self.h, self.w));
+        const FrameType = @TypeOf(async downsample(self.channels[0], self.h, self.w, false));
         var frames = try self.allocator.alloc(FrameType, self.channels.len);
         defer self.allocator.free(frames);
         var down = try self.allocator.alloc([]u8, self.channels.len);
 
         for (self.channels) |c, i| {
-            frames[i] = async downsample(c, self.h, self.w);
+            frames[i] = async downsample(c, self.h, self.w, false);
         }
         for (frames) |*f, i| {
             down[i] = try await f;
@@ -87,7 +87,7 @@ pub const Tile = struct {
         };
 
         var dt = try t.downscale();
-        defer t.allocator.free(dt.channels);
+        // defer t.allocator.free(dt.channels);
 
         std.testing.expect(dt.channels.len == 3);
         std.testing.expect(dt.channels[0].len == 16);
@@ -191,34 +191,43 @@ test "mergeTiles" {
 
 /// downsamples a channel by taking the average of 2x2
 /// pixel squares.
-fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
+fn downsample(chan: []const u8, pixelsH: u32, pixelsW: u32, XVIbits: bool) ![]u8 {
+    const step = if (XVIbits) @as(u32, 4) else @as(u32, 2);
     var sides = Sides{ .oddness = OddSide.None };
 
-    var h = height;
-    if (h % 2 != 0) {
+    var ph = pixelsH;
+    if (ph % 2 != 0) {
         sides.heightOdd();
-        h -= 1;
+        ph -= 1;
     }
-    var w = width;
-    if (w % 2 != 0) {
+    var pw = pixelsW;
+    if (pw % 2 != 0) {
         sides.widthOdd();
-        w -= 1;
+        pw -= 1;
     }
 
-    var size = (3 + chan.len) >> 2;
+    // compute the exact size of the buffer holding the downsampled channel
+    var size = (ph * pw) >> 2;
 
+    // for each odd side, add the size for the downsampled opposite side
     switch (sides.oddness) {
-        OddSide.Height => size += ((1 + width) >> 2),
-        OddSide.Width => size += ((1 + height) >> 2),
-        OddSide.Both => size += ((1 + width) >> 2) + ((1 + height) >> 2),
+        OddSide.Height => size += (pw >> 1),
+        OddSide.Width => size += (ph >> 1),
+        OddSide.Both => size += (pw >> 1) + (ph >> 1) + 1,
         OddSide.None => {},
     }
+    size *= (step / 2);
+    std.debug.print("{}\n", .{size});
 
     const allocator = std.heap.page_allocator;
     var buff_down = try allocator.alloc(u8, size);
     // defer allocator.free(buff_down);
     // var buff_down: [size]u8 = undefined;
 
+    var height = pixelsH;
+    var width = pixelsW * (step / 2);
+    var h = ph;
+    var w = pw * (step / 2);
     var idx: u64 = 0;
     var i: u32 = 0;
 
@@ -228,32 +237,58 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
 
         var j: u32 = 0;
 
-        while (j < w) : (j += 2) {
-            buff_down[idx] = @intCast(u8, (@intCast(u10, r1[j]) +
-                @intCast(u10, r1[j + 1]) +
-                @intCast(u10, r2[j]) +
-                @intCast(u10, r2[j + 1])) >> 2);
+        while (j < w) : (j += step) {
+            buff_down[idx] = @intCast(u8, (@intCast(u16, r1[j]) +
+                @intCast(u16, r1[j + (step / 2)]) +
+                @intCast(u16, r2[j]) +
+                @intCast(u16, r2[j + (step / 2)])) >> 2);
             idx += 1;
+
+            if (XVIbits) {
+                var k = j + 1;
+                buff_down[idx] = @intCast(u8, (@intCast(u16, r1[k]) +
+                    @intCast(u16, r1[k + (step / 2)]) +
+                    @intCast(u16, r2[k]) +
+                    @intCast(u16, r2[k + (step / 2)])) >> 2);
+                idx += 1;
+            }
         }
 
         if (sides.hasWidthOdd()) {
-            buff_down[idx] = @intCast(u8, (@intCast(u9, r1[w]) + @intCast(u9, r2[w])) >> 1);
+            buff_down[idx] = @intCast(u8, (@intCast(u16, r1[w]) + @intCast(u16, r2[w])) >> 1);
             idx += 1;
+
+            if (XVIbits) {
+                buff_down[idx] = @intCast(u8, (@intCast(u16, r1[w + 1]) + @intCast(u16, r2[w + 1])) >> 1);
+                idx += 1;
+            }
         }
     }
 
     if (sides.hasHeightOdd()) {
+        // seek to the last row
         const r = chan[i * width .. (i * width) + width];
         var j: u32 = 0;
 
-        while (j < w) : (j += 2) {
-            buff_down[idx] = @intCast(u8, (@intCast(u9, r[j]) + @intCast(u9, r[j + 1])) >> 1);
+        while (j < w) : (j += step) {
+            buff_down[idx] = @intCast(u8, (@intCast(u16, r[j]) + @intCast(u16, r[j + (step / 2)])) >> 1);
             idx += 1;
+
+            if (XVIbits) {
+                var k = j + 1;
+                buff_down[idx] = @intCast(u8, (@intCast(u16, r[k]) + @intCast(u16, r[k + (step / 2)])) >> 1);
+                idx += 1;
+            }
         }
 
         if (sides.hasWidthOdd()) {
-            buff_down[idx] = chan[chan.len - 1];
+            buff_down[idx] = chan[chan.len - (step / 2)];
             idx += 1;
+
+            if (XVIbits) {
+                buff_down[idx] = chan[chan.len - 1];
+                idx += 1;
+            }
         }
     }
 
@@ -263,75 +298,118 @@ fn downsample(chan: []const u8, height: u32, width: u32) ![]u8 {
 test "downsample" {
     const tests = [_]struct {
         chan: []const u8,
-        exp_len: u32,
+        exp: []const u8,
         height: u32,
         width: u32,
+        XVIbits: bool,
     }{
+        // even sides 8bits square
         .{
             .chan = &[_]u8{255} ** 64,
-            .exp_len = 16,
+            .exp = &[_]u8{255} ** 16,
             .height = 8,
             .width = 8,
+            .XVIbits = false,
         },
+        // even sides 16bits square
+        .{
+            .chan = &[_]u8{ 255, 254 } ** 64,
+            .exp = &[_]u8{ 255, 254 } ** 16,
+            .height = 8,
+            .width = 8,
+            .XVIbits = true,
+        },
+        // odd sides 8bits square
         .{
             .chan = &[_]u8{255} ** 81,
-            .exp_len = 25,
+            .exp = &[_]u8{255} ** 25,
             .height = 9,
             .width = 9,
+            .XVIbits = false,
         },
+        // spare row 8bits
         .{
             .chan = &[_]u8{255} ** 72,
-            .exp_len = 20,
+            .exp = &[_]u8{255} ** 20,
             .height = 9,
             .width = 8,
+            .XVIbits = false,
         },
+        // spare row 16bits
+        .{
+            .chan = &[_]u8{ 255, 254 } ** 72,
+            .exp = &[_]u8{ 255, 254 } ** 20,
+            .height = 9,
+            .width = 8,
+            .XVIbits = true,
+        },
+        // spare row & column 8bits
         .{
             .chan = &[_]u8{255} ** 63,
-            .exp_len = 20,
+            .exp = &[_]u8{255} ** 20,
             .height = 7,
             .width = 9,
+            .XVIbits = false,
         },
+        // spare column 8bits
         .{
             .chan = &[_]u8{255} ** 54,
-            .exp_len = 15,
+            .exp = &[_]u8{255} ** 15,
             .height = 6,
             .width = 9,
+            .XVIbits = false,
         },
+        // spare column small 8bits
         .{
             .chan = &[_]u8{255} ** 6,
-            .exp_len = 2,
+            .exp = &[_]u8{255} ** 2,
             .height = 2,
             .width = 3,
+            .XVIbits = false,
         },
+        // spare row small 8bits
         .{
             .chan = &[_]u8{255} ** 6,
-            .exp_len = 2,
+            .exp = &[_]u8{255} ** 2,
             .height = 3,
             .width = 2,
+            .XVIbits = false,
         },
+        // single column 8bits
         .{
             .chan = &[_]u8{255} ** 2,
-            .exp_len = 1,
+            .exp = &[_]u8{255},
             .height = 2,
             .width = 1,
+            .XVIbits = false,
         },
+        // single column 16bits
+        .{
+            .chan = &[_]u8{ 255, 254 } ** 2,
+            .exp = &[_]u8{ 255, 254 },
+            .height = 2,
+            .width = 1,
+            .XVIbits = true,
+        },
+        // single row 8bits
         .{
             .chan = &[_]u8{255} ** 2,
-            .exp_len = 1,
+            .exp = &[_]u8{255},
             .height = 1,
             .width = 2,
+            .XVIbits = false,
         },
     };
 
     const allocator = std.heap.page_allocator;
 
     for (tests) |t| {
-        const d = try downsample(t.chan, t.height, t.width);
+        const d = try downsample(t.chan, t.height, t.width, t.XVIbits);
         defer allocator.free(d);
 
-        std.debug.assert(d.len == t.exp_len);
-        for (d) |byte| {
-            std.testing.expect(byte == t.chan[0]);
+        std.debug.assert(d.len == t.exp.len);
+        for (d) |byte, i| {
+            std.testing.expect(byte == t.exp[i]);
         }
     }
 }
