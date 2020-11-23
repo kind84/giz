@@ -192,7 +192,7 @@ test "mergeTiles" {
 /// downsamples a channel by taking the average of 2x2
 /// pixel squares.
 fn downsample(chan: []const u8, pixelsH: u32, pixelsW: u32, XVIbits: bool) ![]u8 {
-    const step = if (XVIbits) @as(u32, 4) else @as(u32, 2);
+    const step = if (XVIbits) @as(u32, 2) else @as(u32, 1);
     var sides = Sides{ .oddness = OddSide.None };
 
     var ph = pixelsH;
@@ -216,18 +216,16 @@ fn downsample(chan: []const u8, pixelsH: u32, pixelsW: u32, XVIbits: bool) ![]u8
         OddSide.Both => size += (pw >> 1) + (ph >> 1) + 1,
         OddSide.None => {},
     }
-    size *= (step / 2);
-    std.debug.print("{}\n", .{size});
+    size *= step;
 
     const allocator = std.heap.page_allocator;
     var buff_down = try allocator.alloc(u8, size);
     // defer allocator.free(buff_down);
     // var buff_down: [size]u8 = undefined;
 
-    var height = pixelsH;
-    var width = pixelsW * (step / 2);
+    var width = pixelsW * step;
     var h = ph;
-    var w = pw * (step / 2);
+    var w = pw * step;
     var idx: u64 = 0;
     var i: u32 = 0;
 
@@ -237,19 +235,19 @@ fn downsample(chan: []const u8, pixelsH: u32, pixelsW: u32, XVIbits: bool) ![]u8
 
         var j: u32 = 0;
 
-        while (j < w) : (j += step) {
+        while (j < w) : (j += (step * 2)) {
             buff_down[idx] = @intCast(u8, (@intCast(u16, r1[j]) +
-                @intCast(u16, r1[j + (step / 2)]) +
+                @intCast(u16, r1[j + step]) +
                 @intCast(u16, r2[j]) +
-                @intCast(u16, r2[j + (step / 2)])) >> 2);
+                @intCast(u16, r2[j + step])) >> 2);
             idx += 1;
 
             if (XVIbits) {
                 var k = j + 1;
                 buff_down[idx] = @intCast(u8, (@intCast(u16, r1[k]) +
-                    @intCast(u16, r1[k + (step / 2)]) +
+                    @intCast(u16, r1[k + step]) +
                     @intCast(u16, r2[k]) +
-                    @intCast(u16, r2[k + (step / 2)])) >> 2);
+                    @intCast(u16, r2[k + step])) >> 2);
                 idx += 1;
             }
         }
@@ -270,19 +268,19 @@ fn downsample(chan: []const u8, pixelsH: u32, pixelsW: u32, XVIbits: bool) ![]u8
         const r = chan[i * width .. (i * width) + width];
         var j: u32 = 0;
 
-        while (j < w) : (j += step) {
-            buff_down[idx] = @intCast(u8, (@intCast(u16, r[j]) + @intCast(u16, r[j + (step / 2)])) >> 1);
+        while (j < w) : (j += (step * 2)) {
+            buff_down[idx] = @intCast(u8, (@intCast(u16, r[j]) + @intCast(u16, r[j + step])) >> 1);
             idx += 1;
 
             if (XVIbits) {
                 var k = j + 1;
-                buff_down[idx] = @intCast(u8, (@intCast(u16, r[k]) + @intCast(u16, r[k + (step / 2)])) >> 1);
+                buff_down[idx] = @intCast(u8, (@intCast(u16, r[k]) + @intCast(u16, r[k + step])) >> 1);
                 idx += 1;
             }
         }
 
         if (sides.hasWidthOdd()) {
-            buff_down[idx] = chan[chan.len - (step / 2)];
+            buff_down[idx] = chan[chan.len - step];
             idx += 1;
 
             if (XVIbits) {
