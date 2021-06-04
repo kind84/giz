@@ -2,8 +2,9 @@ const std = @import("std");
 const mem = std.mem;
 const math = std.math;
 const Allocator = mem.Allocator;
-
 const tile = @import("tile.zig");
+const iguan5 = @import("iguan5");
+const Fs = iguan5.Fs;
 
 const Level = struct {
     height: u32,
@@ -28,7 +29,7 @@ pub const PyramidArgs = struct {
     chansNo: u8,
 };
 
-pub fn init(args: *PyramidArgs) !Pyramid {
+pub fn init(args: PyramidArgs) !Pyramid {
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) {
         return error.InvalidArgument;
     }
@@ -41,8 +42,8 @@ pub fn init(args: *PyramidArgs) !Pyramid {
     var l: u5 = 0;
 
     while (l <= num_levels) : (l += 1) {
-        const h = 1 + ((args.slideHeight - 1) >> l);
-        const w = 1 + ((args.slideWidth - 1) >> l);
+        const h = args.slideHeight >> l;
+        const w = args.slideWidth >> l;
 
         // number of tiles per dimension
         const tiles_w = 1 + ((w - 1) / args.tileSize);
@@ -67,8 +68,8 @@ pub fn init(args: *PyramidArgs) !Pyramid {
                 var index = j + (tiles_w * i);
 
                 // compute tile dimensions
-                var tw = tileSide(args.tileSize, w, tiles_w, j);
-                var th = tileSide(args.tileSize, h, tiles_h, i);
+                var tw = tileDimension(args.tileSize, w, tiles_w, j);
+                var th = tileDimension(args.tileSize, h, tiles_h, i);
 
                 var t = tile.Tile{
                     .allocator = args.allocator,
@@ -202,34 +203,53 @@ test "init" {
             .chansNo = 3,
         };
 
-        const p = try init(&args);
+        const p = try init(args);
 
         defer a.destroy(&p);
 
-        std.testing.expectEqual(t.expected.levels.len, p.levels.len);
-        std.testing.expectEqual(@as(u8, 3), p.chansNo);
+        try std.testing.expectEqual(t.expected.levels.len, p.levels.len);
+        try std.testing.expectEqual(@as(u8, 3), p.chansNo);
 
         for (p.levels) |*level, i| {
-            std.testing.expectEqual(t.expected.levels[i].tiles.len, level.tiles.len);
-            std.testing.expectEqual(t.expected.levels[i].tilesCount, level.tilesCount);
-            std.testing.expectEqual(t.expected.levels[i].height, level.height);
-            std.testing.expectEqual(t.expected.levels[i].width, level.width);
-            std.testing.expectEqual(t.expected.levels[i].tilesOnWidth, level.tilesOnWidth);
-            std.testing.expectEqual(t.expected.levels[i].tilesOnHeight, level.tilesOnHeight);
+            try std.testing.expectEqual(t.expected.levels[i].tiles.len, level.tiles.len);
+            try std.testing.expectEqual(t.expected.levels[i].tilesCount, level.tilesCount);
+            try std.testing.expectEqual(t.expected.levels[i].height, level.height);
+            try std.testing.expectEqual(t.expected.levels[i].width, level.width);
+            try std.testing.expectEqual(t.expected.levels[i].tilesOnWidth, level.tilesOnWidth);
+            try std.testing.expectEqual(t.expected.levels[i].tilesOnHeight, level.tilesOnHeight);
 
             for (level.tiles) |l_tile, j| {
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].x, l_tile.x);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].y, l_tile.y);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].h, l_tile.h);
-                std.testing.expectEqual(t.expected.levels[i].tiles[j].w, l_tile.w);
+                try std.testing.expectEqual(t.expected.levels[i].tiles[j].x, l_tile.x);
+                try std.testing.expectEqual(t.expected.levels[i].tiles[j].y, l_tile.y);
+                try std.testing.expectEqual(t.expected.levels[i].tiles[j].h, l_tile.h);
+                try std.testing.expectEqual(t.expected.levels[i].tiles[j].w, l_tile.w);
             }
         }
     }
 }
 
+pub fn build(self: *Pyramid, path: []const u8) !void {
+    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    var full_path = try std.fs.realpath(path, &path_buffer);
+    var fs = try Fs.init(self.allocator, full_path);
+
+    var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
+
+    var attr = try fs.datasetAttributes("0/0");
+    defer attr.deinit();
+    std.debug.print("{}\n", .{attr});
+    var d_block = try fs.getBlock("0/0", attr, &grid_position);
+    defer d_block.deinit();
+    var out = std.io.getStdOut();
+    var buf = try self.allocator.alloc(u8, d_block.len);
+    var n = try d_block.reader().read(buf);
+    defer self.allocator.free(buf);
+    try out.writeAll(buf);
+}
+
 /// Computes the number of levels in the pyramid based on the provided starting
 /// dimensions.
-pub fn pyramidLevels(args: *const PyramidArgs) u64 {
+pub fn pyramidLevels(args: PyramidArgs) u64 {
     // avoid divison by zero and minus sign
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) return 0;
 
@@ -328,7 +348,7 @@ test "pyramidLevels" {
     };
 
     for (tests) |t| {
-        const levels = pyramidLevels(&PyramidArgs{
+        const levels = pyramidLevels(PyramidArgs{
             .allocator = undefined,
             .slideHeight = t.h,
             .slideWidth = t.w,
@@ -336,17 +356,17 @@ test "pyramidLevels" {
             .chansNo = 3,
         });
 
-        std.testing.expect(levels == t.expected);
+        try std.testing.expect(levels == t.expected);
     }
 }
 
-fn tileSide(tileSize: u32, sideSize: u32, tilesOnSide: u32, index: u32) u32 {
+fn tileDimension(tileSize: u32, sideSize: u32, tilesOnSide: u32, index: u32) u32 {
     if (index + 1 == tilesOnSide) {
         return sideSize - (tileSize * (tilesOnSide - 1));
     } else return tileSize;
 }
 
-test "tileSide" {
+test "tileDimension" {
     const tests = [_]struct {
         tileSize: u32,
         sideSize: u32,
@@ -378,9 +398,9 @@ test "tileSide" {
     };
 
     for (tests) |t| {
-        const s = tileSide(t.tileSize, t.sideSize, t.tilesOnSide, t.index);
+        const s = tileDimension(t.tileSize, t.sideSize, t.tilesOnSide, t.index);
 
-        std.testing.expect(s == t.expected);
+        try std.testing.expect(s == t.expected);
     }
 }
 
@@ -436,6 +456,6 @@ test "nextPowerOfTwo" {
 
     for (tests) |t| {
         const p2 = nextPowerOfTwo(t.val);
-        std.testing.expect(p2 == t.expect);
+        try std.testing.expect(p2 == t.expect);
     }
 }

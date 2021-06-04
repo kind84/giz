@@ -1,5 +1,10 @@
 zig-cache
+zig-out
 main
+
+gyro.lock
+**.gyro/
+deps.zig
 
 *.o
 

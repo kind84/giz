@@ -1,0 +1,13 @@
+pkgs:
+  giz:
+    version: 0.0.0
+    root: src/main.zig
+    description: Great Image Zoom. Deep Zoom pyramid computation in ZIG
+    source_url: "https://github.com/kind84/giz"
+deps:
+  iguan5:
+    src:
+      github:
+        user: kind84
+        repo: iguan5
+        ref: master
