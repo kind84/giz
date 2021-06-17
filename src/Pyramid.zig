@@ -1,4 +1,5 @@
 const std = @import("std");
+const fifo = std.fifo;
 const mem = std.mem;
 const math = std.math;
 const Allocator = mem.Allocator;
@@ -18,8 +19,11 @@ const Level = struct {
 const Pyramid = @This();
 
 allocator: *Allocator,
+arena: *std.heap.ArenaAllocator,
 levels: []Level,
 chansNo: u8,
+reader: Fs,
+queue: fifo.LinearFifo(TileInfo, .Dynamic),
 
 pub const PyramidArgs = struct {
     allocator: *Allocator,
@@ -27,16 +31,29 @@ pub const PyramidArgs = struct {
     slideWidth: u32,
     tileSize: u32,
     chansNo: u8,
+    path: []const u8,
 };
 
-pub fn init(args: PyramidArgs) !Pyramid {
+const TileInfo = struct {
+    index: u32,
+    level: u32,
+};
+
+pub fn init(args: PyramidArgs) !*Pyramid {
+    var result = try args.allocator.create(Pyramid);
+    errdefer args.allocator.destroy(result);
+
+    const arena = &std.heap.ArenaAllocator.init(args.allocator);
+    const a = &arena.allocator;
+    errdefer arena.deinit();
+
     if (args.slideHeight == 0 or args.slideWidth == 0 or args.tileSize == 0) {
         return error.InvalidArgument;
     }
 
     const num_levels = pyramidLevels(args);
 
-    var levels = try args.allocator.alloc(Level, num_levels + 1);
+    var levels = try a.alloc(Level, num_levels + 1);
 
     var tot_tiles: u32 = 0;
     var l: u5 = 0;
@@ -59,7 +76,7 @@ pub fn init(args: PyramidArgs) !Pyramid {
         };
         tot_tiles += level.tilesCount;
 
-        var tiles = try args.allocator.alloc(tile.Tile, level.tilesCount);
+        var tiles = try a.alloc(tile.Tile, level.tilesCount);
 
         var i: u32 = 0;
         while (i < tiles_h) : (i += 1) {
@@ -89,11 +106,24 @@ pub fn init(args: PyramidArgs) !Pyramid {
         levels[l] = level;
     }
 
-    return Pyramid{
-        .allocator = args.allocator,
-        .levels = levels,
-        .chansNo = args.chansNo,
-    };
+    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
+    var full_path = try std.fs.realpath(args.path, &path_buffer);
+    var fs = try Fs.init(args.allocator, full_path);
+
+    var queue = fifo.LinearFifo(TileInfo, .Dynamic).init(args.allocator);
+
+    result.allocator = args.allocator;
+    result.arena = arena;
+    result.levels = levels;
+    result.chansNo = args.chansNo;
+    result.queue = queue;
+
+    return result;
+}
+
+pub fn deinit(self: *Pyramid) void {
+    self.arena.deinit();
+    self.allocator.destroy(self);
 }
 
 test "init" {
@@ -181,8 +211,11 @@ test "init" {
             .w = 1920,
             .expected = Pyramid{
                 .allocator = undefined,
+                .arena = undefined,
                 .levels = levels,
                 .chansNo = 3,
+                .reader = undefined,
+                .queue = fifo.LinearFifo(TileInfo, .Dynamic).init(undefined),
             },
             .expectsErr = false,
         },
@@ -190,10 +223,7 @@ test "init" {
 
     for (tests) |t| {
         var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-        const allocator = &gpa.allocator;
-        const arena = &std.heap.ArenaAllocator.init(allocator);
-        const a = &arena.allocator;
-        defer arena.deinit();
+        const a = &gpa.allocator;
 
         var args = PyramidArgs{
             .allocator = a,
@@ -201,11 +231,10 @@ test "init" {
             .slideWidth = t.w,
             .tileSize = t.tileSize,
             .chansNo = 3,
+            .path = "testdata/",
         };
 
         const p = try init(args);
-
-        defer a.destroy(&p);
 
         try std.testing.expectEqual(t.expected.levels.len, p.levels.len);
         try std.testing.expectEqual(@as(u8, 3), p.chansNo);
@@ -225,20 +254,18 @@ test "init" {
                 try std.testing.expectEqual(t.expected.levels[i].tiles[j].w, l_tile.w);
             }
         }
+        p.deinit();
+        try std.testing.expect(!gpa.deinit());
     }
 }
 
-pub fn build(self: *Pyramid, path: []const u8) !void {
-    var path_buffer: [std.os.PATH_MAX]u8 = undefined;
-    var full_path = try std.fs.realpath(path, &path_buffer);
-    var fs = try Fs.init(self.allocator, full_path);
-
+pub fn build(self: *Pyramid) !void {
     var grid_position = [_]i64{ 0, 0, 0, 0, 0 };
 
-    var attr = try fs.datasetAttributes("0/0");
+    var attr = try self.reader.datasetAttributes("0/0");
     defer attr.deinit();
     std.debug.print("{}\n", .{attr});
-    var d_block = try fs.getBlock("0/0", attr, &grid_position);
+    var d_block = try self.reader.getBlock("0/0", attr, &grid_position);
     defer d_block.deinit();
     var out = std.io.getStdOut();
     var buf = try self.allocator.alloc(u8, d_block.len);
@@ -354,6 +381,7 @@ test "pyramidLevels" {
             .slideWidth = t.w,
             .tileSize = t.tileSize,
             .chansNo = 3,
+            .path = undefined,
         });
 
         try std.testing.expect(levels == t.expected);

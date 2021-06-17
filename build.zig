@@ -2,8 +2,8 @@ const std = @import("std");
 const pkgs = @import("deps.zig").pkgs;
 
 fn addDeps(step: *std.build.LibExeObjStep) void {
-    step.addIncludeDir("./.gyro/iguan5-kind84-4a62a7dc9435ce60f379581798f98d6fc694b47a/pkg/src/vendor/");
-    step.addCSourceFile("./.gyro/iguan5-kind84-4a62a7dc9435ce60f379581798f98d6fc694b47a/pkg/src/vendor/lz4.c", &.{});
+    step.addIncludeDir("./.gyro/iguan5-kind84-4142cf6cc245801240ad030be1c119378d5fd8b4/pkg/src/vendor/");
+    step.addCSourceFile("./.gyro/iguan5-kind84-4142cf6cc245801240ad030be1c119378d5fd8b4/pkg/src/vendor/lz4.c", &.{});
 }
 
 pub fn build(b: *std.build.Builder) void {
@@ -21,6 +21,9 @@ pub fn build(b: *std.build.Builder) void {
 
     var main_tests = b.addTest("src/main.zig");
     main_tests.setBuildMode(mode);
+    main_tests.linkLibC();
+    pkgs.addAllTo(main_tests);
+    addDeps(main_tests);
 
     const test_step = b.step("test", "Run library tests");
     test_step.dependOn(&main_tests.step);

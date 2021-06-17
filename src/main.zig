@@ -39,9 +39,10 @@ pub fn main() !void {
         .slideWidth = 1920,
         .tileSize = 512,
         .chansNo = 3,
+        .path = "../iguan5/testdata/lynx_lz4/data.n5",
     });
 
-    try pyr.build("../iguan5/testdata/lynx_lz4/data.n5");
+    try pyr.build();
 }
 
 fn printChan(chan: []const u8, w: u32) void {
@@ -55,13 +56,6 @@ fn printChan(chan: []const u8, w: u32) void {
     std.debug.print("\n", .{});
 }
 
-fn buildPyramid(allocator: *Allocator) !void {
-    var args = Pyramid.PyramidArgs{
-        .allocator = allocator,
-        .slideHeight = 1080,
-        .slideWidth = 1920,
-        .tileSize = 512,
-        .chansNo = 3,
-    };
-    var pyr = Pyramid.init(&args);
+test "giz" {
+    _ = @import("Pyramid.zig");
 }
