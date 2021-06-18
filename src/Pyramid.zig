@@ -231,7 +231,7 @@ test "init" {
             .slideWidth = t.w,
             .tileSize = t.tileSize,
             .chansNo = 3,
-            .path = "testdata/",
+            .path = "testdata/lynx_lz4",
         };
 
         const p = try init(args);
