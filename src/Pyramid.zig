@@ -117,12 +117,14 @@ pub fn init(args: PyramidArgs) !*Pyramid {
     result.levels = levels;
     result.chansNo = args.chansNo;
     result.queue = queue;
+    result.reader = fs;
 
     return result;
 }
 
 pub fn deinit(self: *Pyramid) void {
     self.arena.deinit();
+    self.reader.deinit();
     self.allocator.destroy(self);
 }
 
@@ -269,7 +271,7 @@ pub fn build(self: *Pyramid) !void {
     defer d_block.deinit();
     var out = std.io.getStdOut();
     var buf = try self.allocator.alloc(u8, d_block.len);
-    var n = try d_block.reader().read(buf);
+    _ = try d_block.reader().read(buf);
     defer self.allocator.free(buf);
     try out.writeAll(buf);
 }
